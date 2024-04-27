@@ -1,4 +1,4 @@
-package database
+package api
 
 import (
 	"database/sql"
@@ -36,21 +36,22 @@ func DatabaseCheck() {
 		_, err := os.Stat(TODO_DBFILE)
 		if err != nil {
 			install = true
+			log.Println("Database is not found")
 		}
 
 		if install == true {
 			_, err := os.Create(TODO_DBFILE)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			db, err := sql.Open("sqlite", TODO_DBFILE)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			defer db.Close()
 			err = createTable(db)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			fmt.Println("Database is installed with TODO_DBFILE path")
 		}
@@ -63,16 +64,16 @@ func DatabaseCheck() {
 		if install == true {
 			_, err := os.Create(defaultDbPath)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			db, err := sql.Open("sqlite", defaultDbPath)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			defer db.Close()
 			err = createTable(db)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
 			}
 			fmt.Println("Database is installed with default path")
 		}

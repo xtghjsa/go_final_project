@@ -1,13 +1,12 @@
 package main
 
 import (
-	"main/database"
-	"main/server"
+	"main/api"
 )
 
 func main() {
-	server.EnvInit()
-	database.DatabaseCheck()
-	server.StartServer()
+	api.EnvInit()
+	api.DatabaseCheck()
+	api.StartServer()
 
 }
