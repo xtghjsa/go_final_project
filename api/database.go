@@ -13,9 +13,9 @@ func createTable(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS scheduler (
 		    id INTEGER PRIMARY KEY AUTOINCREMENT,
-		    date VARCHAR(8) NOT NULL DEFAULT '',
-		    title TEXT NOT NULL DEFAULT '',
-		    comment TEXT NOT NULL DEFAULT '',
+		    date VARCHAR(8) ,
+		    title TEXT  ,
+		    comment TEXT  ,
 		    repeat VARCHAR(128) 
 		    );
 		CREATE INDEX scheduler_date ON scheduler(date);
