@@ -36,7 +36,7 @@ func DatabaseCheck() {
 		_, err := os.Stat(TODO_DBFILE)
 		if err != nil {
 			install = true
-			log.Println("Database is not found")
+			log.Println("База данных не найдена")
 		}
 
 		if install == true {
@@ -53,7 +53,7 @@ func DatabaseCheck() {
 			if err != nil {
 				log.Println(err)
 			}
-			fmt.Println("Database is installed with TODO_DBFILE path")
+			fmt.Println("База данных установлена по указанному в TODO_DBFILE пути")
 		}
 	}
 	if exists == false || TODO_DBFILE == "" {
@@ -75,7 +75,7 @@ func DatabaseCheck() {
 			if err != nil {
 				log.Println(err)
 			}
-			fmt.Println("Database is installed with default path")
+			fmt.Println("База данных установлена по стандартному пути")
 		}
 	}
 }

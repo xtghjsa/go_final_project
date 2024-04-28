@@ -12,7 +12,11 @@ import (
 // EnvInit Загружает переменные из файла .env
 func EnvInit() {
 	if err := godotenv.Load(".env"); err != nil {
-		log.Print(".env file notfound")
+		log.Print("файл .env не найден")
+		_, err = os.Create(".env")
+		if err != nil {
+			log.Print("не удалось создать файл .env")
+		}
 	}
 }
 
@@ -23,7 +27,7 @@ func StartServer() {
 	// При наличии файла .env c заданным значением переменной TODO_PORT сервер запустится на указанном порту
 	TODO_PORT, exists := os.LookupEnv("TODO_PORT")
 	if exists && TODO_PORT != "" {
-		fmt.Printf("Server is running on localhost:%s", TODO_PORT+" (from .env)")
+		fmt.Printf("Сервер запущен на localhost:%s", TODO_PORT+" по порту указанному в .env")
 		http.Handle("/", http.FileServer(http.Dir(webDir)))
 		http.HandleFunc("/api/nextdate", NextDateHandler)
 		err := http.ListenAndServe(":"+TODO_PORT, nil)
@@ -32,7 +36,7 @@ func StartServer() {
 		}
 	}
 	// Если переменная не задана, по умолчанию будет использован стандартный порт 7540
-	fmt.Printf("Server is running on localhost:%s", defaultPort+" (default)")
+	fmt.Printf("Сервер запущен на localhost:%s", defaultPort+" по умолчанию")
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 	err := http.ListenAndServe(":7540", nil)
 	if err != nil {
@@ -46,7 +50,7 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 	repeatParameter := r.URL.Query().Get("repeat")
 	now, err := time.Parse("20060102", nowParameter)
 	if err != nil {
-		http.Error(w, "incorrect now format", http.StatusBadRequest)
+		http.Error(w, "некорректный формат now", http.StatusBadRequest)
 		return
 	}
 	next, err := NextDate(now, dateParameter, repeatParameter)

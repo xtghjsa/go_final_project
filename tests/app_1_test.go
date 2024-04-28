@@ -28,11 +28,14 @@ func getURL(path string) string {
 func getBody(path string) ([]byte, error) {
 	resp, err := http.Get(getURL(path))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Get body %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
-	return body, err
+	if err != nil {
+		return nil, fmt.Errorf("Read body %w", err)
+	}
+	return body, nil
 }
 
 func walkDir(path string, f func(fname string) error) error {
