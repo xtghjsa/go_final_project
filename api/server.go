@@ -217,15 +217,27 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 	case "DELETE":
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			http.Error(w, "не задан id", http.StatusBadRequest)
+			w.Write(errorResponse("id не указан"))
 			return
 		}
+
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.Write(errorResponse("Ошибка при открытии базы данных"))
 			return
 		}
 		defer db.Close()
+
+		row := db.QueryRow("SELECT id FROM scheduler WHERE id=?", id)
+
+		var taskId string
+
+		err = row.Scan(&taskId)
+		if err != nil {
+			w.Write(errorResponse("Задача не найдена"))
+			return
+		}
+
 		stmt, err := db.Prepare("DELETE FROM scheduler WHERE id=?")
 		if err != nil {
 			w.Write(errorResponse("Ошибка при подготовке запроса"))
