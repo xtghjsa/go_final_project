@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+func errorResponse(errorText string) []byte {
+	jsonErr, err := json.Marshal(map[string]string{"error": errorText})
+	if err != nil {
+		log.Println(err)
+	}
+	return jsonErr
+}
+
 // EnvInit Загружает переменные из файла .env
 func EnvInit() {
 	if err := godotenv.Load(".env"); err != nil {
@@ -38,6 +46,7 @@ func StartServer() {
 	http.HandleFunc("/api/nextdate", nextDateHandler)
 	http.HandleFunc("/api/tasks", showTasksHandler)
 	http.HandleFunc("/api/task", taskManagerHandler)
+	http.HandleFunc("/api/task/done", markTaskAsDoneHandler)
 	err := http.ListenAndServe(":"+TODO_PORT, nil)
 	if err != nil {
 		panic(err)
@@ -219,16 +228,26 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		defer db.Close()
 		stmt, err := db.Prepare("DELETE FROM scheduler WHERE id=?")
 		if err != nil {
+			w.Write(errorResponse("Ошибка при подготовке запроса"))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		_, err = stmt.Exec(id)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.Write(errorResponse("Ошибка при удалении записи из базы данных"))
 			log.Println(err)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+
+		jsonResponse, err := json.Marshal(map[string]string{})
+		if err != nil {
+			w.Write(errorResponse("Ошибка при записи в json"))
+			log.Println(err)
+			return
+		}
+
+		w.Write(jsonResponse)
+
 	case "PUT":
 		var task TaskR
 
@@ -449,10 +468,104 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(jsonResponse)
 	}
 }
-func errorResponse(errorText string) []byte {
-	jsonErr, err := json.Marshal(map[string]string{"error": errorText})
-	if err != nil {
-		log.Println(err)
+
+// api/task/done
+func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
+	var dbPath = "./database/scheduler.db"
+	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
+	if exists && TODO_DBFILE != "" {
+		dbPath = TODO_DBFILE
 	}
-	return jsonErr
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		w.Write(errorResponse("id не указан"))
+		return
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println("Ошибка при открытии базы данных")
+		return
+	}
+	defer db.Close()
+
+	stmt, err := db.Prepare("SELECT id, date, title, comment, repeat FROM scheduler WHERE id=?")
+	if err != nil {
+		w.Write(errorResponse("Ошибка при получении id записи в базе данных"))
+	}
+
+	var taskId, date, title, comment, repeat string
+
+	err = stmt.QueryRow(id).Scan(&taskId, &date, &title, &comment, &repeat)
+	if err != nil {
+		w.Write(errorResponse("Задача не найдена"))
+		return
+	}
+	if repeat == "" {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "не задан id", http.StatusBadRequest)
+			return
+		}
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer db.Close()
+		stmt, err := db.Prepare("DELETE FROM scheduler WHERE id=?")
+		if err != nil {
+			w.Write(errorResponse("Ошибка при подготовке запроса"))
+			return
+		}
+		_, err = stmt.Exec(id)
+		if err != nil {
+			w.Write(errorResponse("Ошибка при удалении записи из базы данных"))
+			log.Println(err)
+			return
+		}
+		jsonResponse, err := json.Marshal(map[string]string{})
+		if err != nil {
+			w.Write(errorResponse("Ошибка при записи в json"))
+			log.Println(err)
+			return
+		}
+		w.Write(jsonResponse)
+
+	}
+	if repeat != "" {
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer db.Close()
+		stmt, err = db.Prepare("UPDATE scheduler SET date = ? WHERE id = ?")
+		if err != nil {
+			w.Write(errorResponse("Ошибка при подготовке запроса"))
+			return
+		}
+		renewDate, err := NextDate(time.Now(), date, repeat)
+		if err != nil {
+			w.Write(errorResponse("Ошибка при получении даты для повторения"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, err = stmt.Exec(renewDate, id)
+		if err != nil {
+			w.Write(errorResponse("Ошибка при записи изменений в базу данных"))
+			log.Println(err)
+			return
+		}
+		jsonResponse, err := json.Marshal(map[string]string{})
+		if err != nil {
+			w.Write(errorResponse("Ошибка при записи в json"))
+			log.Println(err)
+			return
+		}
+		w.Write(jsonResponse)
+
+	}
 }
