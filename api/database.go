@@ -28,54 +28,34 @@ func createTable(db *sql.DB) error {
 
 // DatabaseCheck DatabaseInit - проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
 func DatabaseCheck() {
-	var defaultDbPath = "../go_final_project/scheduler.db"
-	var install bool
-	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в defaultDbPath
+	var dbPath = "./database/scheduler.db"
 	TODO_DBFILE, exists := os.LookupEnv("TODO_DBFILE")
 	if exists && TODO_DBFILE != "" {
-		_, err := os.Stat(TODO_DBFILE)
-		if err != nil {
-			install = true
-			log.Println("База данных не найдена")
-		}
-
-		if install == true {
-			_, err := os.Create(TODO_DBFILE)
-			if err != nil {
-				log.Println(err)
-			}
-			db, err := sql.Open("sqlite", TODO_DBFILE)
-			if err != nil {
-				log.Println(err)
-			}
-			defer db.Close()
-			err = createTable(db)
-			if err != nil {
-				log.Println(err)
-			}
-			fmt.Println("База данных установлена по указанному в TODO_DBFILE пути")
-		}
+		dbPath = TODO_DBFILE
 	}
-	if exists == false || TODO_DBFILE == "" {
-		_, err := os.Stat(defaultDbPath)
+	var install bool
+	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в корне проекта
+
+	_, err := os.Stat(dbPath)
+	if err != nil {
+		install = true
+		log.Println("База данных не найдена")
+	}
+
+	if install == true {
+		_, err := os.Create(dbPath)
 		if err != nil {
-			install = true
+			log.Println(err)
 		}
-		if install == true {
-			_, err := os.Create(defaultDbPath)
-			if err != nil {
-				log.Println(err)
-			}
-			db, err := sql.Open("sqlite", defaultDbPath)
-			if err != nil {
-				log.Println(err)
-			}
-			defer db.Close()
-			err = createTable(db)
-			if err != nil {
-				log.Println(err)
-			}
-			fmt.Println("База данных установлена по стандартному пути")
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			log.Println(err)
 		}
+		defer db.Close()
+		err = createTable(db)
+		if err != nil {
+			log.Println(err)
+		}
+		fmt.Println("База данных установлена")
 	}
 }

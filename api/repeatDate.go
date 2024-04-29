@@ -87,12 +87,17 @@ func NextDate(now time.Time, date string, repeat string) (string, error) {
 			return "", errors.New("дней не может быть больше 400 и меньше 1")
 		}
 		var caseDResult string
+
 		if parsedDate.After(now) {
 			caseDResult = parsedDate.AddDate(0, 0, days).Format("20060102")
 		}
-		for i := parsedDate; i.Before(now); i = i.AddDate(0, 0, days) {
-			caseDResult = i.AddDate(0, 0, days).Format("20060102")
+
+		if parsedDate.Before(now) {
+			for i := parsedDate; i.Before(now); i = i.AddDate(0, 0, days) {
+				caseDResult = i.AddDate(0, 0, days).Format("20060102")
+			}
 		}
+
 		return caseDResult, nil
 
 	case "w": // дни недели

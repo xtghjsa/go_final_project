@@ -3,5 +3,5 @@ package tests
 var Port = 7540
 var DBFile = "E:\\Dev\\go_final_project\\database\\scheduler.db"
 var FullNextDate = true
-var Search = false
+var Search = true
 var Token = ``
