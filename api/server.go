@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"log"
 	"net/http"
@@ -15,18 +16,31 @@ import (
 func errorResponse(errorText string) []byte {
 	jsonErr, err := json.Marshal(map[string]string{"error": errorText})
 	if err != nil {
-		log.Println(err)
+		log.Println("Ошибка при записи в json", err)
 	}
 	return jsonErr
+}
+
+var secret []byte
+
+func tokenResponse(password string) string {
+	jwtToken := jwt.New(jwt.SigningMethodHS256)
+	signedToken, err := jwtToken.SignedString(secret)
+	if err != nil {
+		log.Println("Ошибка при подписании токена", err)
+	}
+
+	return signedToken
 }
 
 // EnvInit Загружает переменные из файла .env
 func EnvInit() {
 	if err := godotenv.Load(".env"); err != nil {
-		log.Println("файл .env не найден")
+		log.Println("файл .env не найден", err)
+		fmt.Println("создаю файл .env")
 		_, err = os.Create(".env")
 		if err != nil {
-			log.Println("не удалось создать файл .env")
+			log.Println("не удалось создать файл .env", err)
 		}
 	}
 }
@@ -41,15 +55,16 @@ func StartServer() {
 		Port = TODO_PORT
 	}
 	// При наличии файла .env c заданным значением переменной TODO_PORT сервер запустится на указанном порту если переменная не задана, то будет использован стандартный порт 7540
-	fmt.Printf("Сервер запущен на localhost:%s", Port)
+	fmt.Printf("Сервер запущен на localhost:%s\n", Port)
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 	http.HandleFunc("/api/nextdate", nextDateHandler)
-	http.HandleFunc("/api/tasks", showTasksHandler)
-	http.HandleFunc("/api/task", taskManagerHandler)
-	http.HandleFunc("/api/task/done", markTaskAsDoneHandler)
-	err := http.ListenAndServe(":"+TODO_PORT, nil)
+	http.HandleFunc("/api/tasks", auth(showTasksHandler))
+	http.HandleFunc("/api/task", auth(taskManagerHandler))
+	http.HandleFunc("/api/task/done", auth(markTaskAsDoneHandler))
+	http.HandleFunc("/api/signin", checkPasswordHandler)
+	err := http.ListenAndServe(":"+Port, nil)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
 func nextDateHandler(w http.ResponseWriter, r *http.Request) {
@@ -59,16 +74,19 @@ func nextDateHandler(w http.ResponseWriter, r *http.Request) {
 	now, err := time.Parse("20060102", nowParameter)
 	if err != nil {
 		http.Error(w, "некорректный формат now", http.StatusBadRequest)
+		log.Println("некорректный формат now", err)
 		return
 	}
 	next, err := NextDate(now, dateParameter, repeatParameter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Println("Ошибка при получении даты для повторения", err)
 		return
 	}
 	_, err = fmt.Fprintf(w, next)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println("Ошибка при выводе даты", err)
 		return
 	}
 }
@@ -104,6 +122,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
@@ -113,6 +132,11 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		var taskId, date, title, comment, repeat string
 
 		err = row.Scan(&taskId, &date, &title, &comment, &repeat)
+		if err != nil {
+			w.Write(errorResponse("Задача не найдена"))
+			log.Println("Задача не найдена", err)
+			return
+		}
 		task := map[string]string{
 			"id":      taskId,
 			"date":    date,
@@ -121,17 +145,15 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 			"repeat":  repeat,
 		}
 		if taskId == "" {
-			w.Write(errorResponse("Задача не найдена"))
+			http.Error(w, "Задача не найдена", http.StatusBadRequest)
 			return
 		}
 		jsonResponse, err := json.Marshal(task)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Println("Ошибка при записи в json", err)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
 		w.Write(jsonResponse)
 
 	case "POST":
@@ -140,8 +162,8 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 
 		err := json.NewDecoder(r.Body).Decode(&task)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при декодировании запроса"))
-			log.Println("Ошибка при декодировании запроса")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при декодировании запроса", err)
 			return
 		}
 		if task.Title == "" {
@@ -154,8 +176,9 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		dateTime, err := time.Parse("20060102", task.Date)
 		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
 			w.Write(errorResponse("Некорректный формат даты"))
-			log.Println("Некорректный формат даты")
+			log.Println("Некорректный формат даты", err)
 			return
 		}
 		if dateTime.Format("20060102") == time.Now().Format("20060102") {
@@ -167,8 +190,9 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 			} else if task.Repeat != "" {
 				task.Date, err = NextDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
 				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
 					w.Write(errorResponse("Некорректный формат повторения"))
-					log.Println("Некорректный формат повторения")
+					log.Println("Некорректный формат повторения", err)
 					return
 				}
 			}
@@ -176,54 +200,51 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при открытии базы данных")
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
 		stmt, err := db.Prepare("INSERT INTO scheduler (date, title, comment, repeat) VALUES (?, ?, ?, ?)")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при создании записи в базе данных")
+			log.Println("Ошибка при создании записи в базе данных", err)
 			return
 		}
 		res, err := stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при записи в базу данных")
+			log.Println("Ошибка при записи в базу данных", err)
 			return
 		}
 		id, err := res.LastInsertId()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при получении id записи в базе данных")
+			log.Println("Ошибка при получении id записи в базе данных", err)
 			return
 		}
 		idStr := strconv.Itoa(int(id))
 		jsonId, err := json.Marshal(map[string]string{"id": idStr})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при записи id в json")
+			log.Println("Ошибка при записи id в json", err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		w.WriteHeader(http.StatusCreated)
-		_, err = w.Write(jsonId)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при возвращении ответа")
-			return
-		}
+		w.Write(jsonId)
 
 	case "DELETE":
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			w.Write(errorResponse("id не указан"))
+			log.Println("id не указан")
 			return
 		}
 
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при открытии базы данных"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
@@ -235,29 +256,29 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		err = row.Scan(&taskId)
 		if err != nil {
 			w.Write(errorResponse("Задача не найдена"))
+			log.Println("Задача не найдена", err)
 			return
 		}
 
 		stmt, err := db.Prepare("DELETE FROM scheduler WHERE id=?")
 		if err != nil {
-			w.Write(errorResponse("Ошибка при подготовке запроса"))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при подготовке запроса к базе данных", err)
 			return
 		}
 		_, err = stmt.Exec(id)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при удалении записи из базы данных"))
-			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при удалении записи из базы данных", err)
 			return
 		}
 
 		jsonResponse, err := json.Marshal(map[string]string{})
 		if err != nil {
-			w.Write(errorResponse("Ошибка при записи в json"))
-			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при записи в json", err)
 			return
 		}
-
 		w.Write(jsonResponse)
 
 	case "PUT":
@@ -266,7 +287,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		err := json.NewDecoder(r.Body).Decode(&task)
 		if err != nil {
 			w.Write(errorResponse("Ошибка при декодировании запроса"))
-			log.Println("Ошибка при декодировании запроса")
+			log.Println("Ошибка при декодировании запроса", err)
 			return
 		}
 		if task.Title == "" {
@@ -280,7 +301,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		dateTime, err := time.Parse("20060102", task.Date)
 		if err != nil {
 			w.Write(errorResponse("Некорректный формат даты"))
-			log.Println("Некорректный формат даты")
+			log.Println("Некорректный формат даты", err)
 			return
 		}
 
@@ -291,7 +312,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 				task.Date, err = NextDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
 				if err != nil {
 					w.Write(errorResponse("Некорректный формат повторения"))
-					log.Println("Некорректный формат повторения")
+					log.Println("Некорректный формат повторения", err)
 					return
 				}
 			}
@@ -299,20 +320,20 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при открытии базы данных")
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
 		stmt, err := db.Prepare("UPDATE scheduler SET date = ?, title = ?, comment = ?, repeat = ?  WHERE id = ?")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Ошибка при создании изменений в базе данных")
+			log.Println("Ошибка при создании изменений в базе данных", err)
 			return
 		}
 		_, err = stmt.Exec(task.Date, task.Title, task.Comment, task.Repeat, task.ID)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при записи изменений в базу данных"))
-			log.Println("Ошибка при записи изменений в базу данных")
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при записи изменений в базу данных", err)
 			return
 		}
 		row := db.QueryRow("SELECT id, date, title, comment, repeat FROM scheduler WHERE id=?", task.ID)
@@ -320,6 +341,11 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		var taskId, date, title, comment, repeat string
 
 		err = row.Scan(&taskId, &date, &title, &comment, &repeat)
+		if err != nil {
+			w.Write(errorResponse("Задача не найдена"))
+			log.Println("Задача не найдена", err)
+			return
+		}
 
 		if taskId == "" {
 			w.Write(errorResponse("Задача не найдена"))
@@ -328,15 +354,14 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		jsonResponse, err := json.Marshal(map[string]string{})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Println("Ошибка при записи в json", err)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
 		w.Write(jsonResponse)
 
 	default:
-		http.Error(w, "неизвестный метод", http.StatusMethodNotAllowed)
+		http.Error(w, "недоступный метод", http.StatusMethodNotAllowed)
+		log.Println("недоступный метод")
 	}
 }
 
@@ -351,14 +376,14 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 	if search != "" {
 		searchTime, err := time.Parse("02.01.2006", search)
 		if err != nil {
-			log.Println("Запрос не является датой")
+			log.Println("Запрос не является датой", err)
 		}
 		searchTimeString := searchTime.Format("20060102")
 		search = "%" + search + "%"
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Println("Ошибка при открытии базы данных", err)
 		}
 		defer db.Close()
 
@@ -410,17 +435,16 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 		jsonResponse, err := json.Marshal(tasksResponse)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Println("Ошибка при записи в json", err)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
+
 		w.Write(jsonResponse)
 	} else {
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println(err)
+			log.Println("Ошибка при открытии базы данных", err)
 		}
 		defer db.Close()
 
@@ -475,8 +499,7 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-		w.WriteHeader(http.StatusOK)
+
 		w.Write(jsonResponse)
 	}
 }
@@ -492,55 +515,61 @@ func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		w.Write(errorResponse("id не указан"))
+		log.Println("id не указан")
 		return
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		log.Println("Ошибка при открытии базы данных")
+		log.Println("Ошибка при открытии базы данных", err)
 		return
 	}
 	defer db.Close()
 
 	stmt, err := db.Prepare("SELECT id, date, title, comment, repeat FROM scheduler WHERE id=?")
 	if err != nil {
-		w.Write(errorResponse("Ошибка при получении id записи в базе данных"))
+		w.WriteHeader(http.StatusInternalServerError)
+		log.Println("Ошибка при подготовке запроса к базе данных", err)
 	}
 
 	var taskId, date, title, comment, repeat string
 
 	err = stmt.QueryRow(id).Scan(&taskId, &date, &title, &comment, &repeat)
 	if err != nil {
-		w.Write(errorResponse("Задача не найдена"))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		log.Println("Задача не найдена", err)
 		return
 	}
 	if repeat == "" {
-		id := r.URL.Query().Get("id")
+		id = r.URL.Query().Get("id")
 		if id == "" {
-			http.Error(w, "не задан id", http.StatusBadRequest)
+			w.Write(errorResponse("не задан id"))
+			log.Println("не задан id")
 			return
 		}
-		db, err := sql.Open("sqlite", dbPath)
+		db, err = sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
-		stmt, err := db.Prepare("DELETE FROM scheduler WHERE id=?")
+		stmt, err = db.Prepare("DELETE FROM scheduler WHERE id=?")
 		if err != nil {
-			w.Write(errorResponse("Ошибка при подготовке запроса"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при подготовке запроса к базе данных", err)
 			return
 		}
 		_, err = stmt.Exec(id)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при удалении записи из базы данных"))
-			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при удалении записи из базы данных", err)
 			return
 		}
 		jsonResponse, err := json.Marshal(map[string]string{})
 		if err != nil {
-			w.Write(errorResponse("Ошибка при записи в json"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			log.Println(err)
 			return
 		}
@@ -548,36 +577,111 @@ func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
 
 	}
 	if repeat != "" {
-		db, err := sql.Open("sqlite", dbPath)
+		db, err = sql.Open("sqlite", dbPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при открытии базы данных", err)
 			return
 		}
 		defer db.Close()
 		stmt, err = db.Prepare("UPDATE scheduler SET date = ? WHERE id = ?")
 		if err != nil {
-			w.Write(errorResponse("Ошибка при подготовке запроса"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при подготовке запроса к базе данных", err)
 			return
 		}
 		renewDate, err := NextDate(time.Now(), date, repeat)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при получении даты для повторения"))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при получении даты для повторения", err)
 			return
 		}
 		_, err = stmt.Exec(renewDate, id)
 		if err != nil {
-			w.Write(errorResponse("Ошибка при записи изменений в базу данных"))
-			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при записи изменений в базу данных", err)
 			return
 		}
 		jsonResponse, err := json.Marshal(map[string]string{})
 		if err != nil {
-			w.Write(errorResponse("Ошибка при записи в json"))
-			log.Println(err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при записи в json", err)
 			return
 		}
 		w.Write(jsonResponse)
 
+	}
+}
+
+// api/signin
+func checkPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	type pass struct {
+		Password string `json:"password"`
+	}
+	var requested pass
+
+	err := json.NewDecoder(r.Body).Decode(&requested)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println("Ошибка при декодировании запроса", err)
+		return
+	}
+	if requested.Password == "" {
+		w.Write(errorResponse("Введите пароль"))
+		return
+	}
+	savedPassword, exists := os.LookupEnv("TODO_PASSWORD")
+	if !exists {
+		w.Write(errorResponse("Пароль не задан"))
+	}
+	if savedPassword == requested.Password {
+		token, err := json.Marshal(tokenResponse(requested.Password))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Println("Ошибка при записи в json", err)
+		}
+		w.Write(token)
+	} else {
+		w.Write(errorResponse("Неверный пароль"))
+	}
+}
+
+func auth(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// смотрим наличие пароля
+		pass := os.Getenv("TODO_PASSWORD")
+		if len(pass) > 0 {
+			var jwt string // JWT-токен из куки
+			// получаем куку
+			cookie, err := r.Cookie("token")
+			if err == nil {
+				jwt = cookie.Value
+			}
+			var valid bool
+			// здесь код для валидации и проверки JWT-токена
+			valid = validateToken(jwt)
+			if !valid {
+				// возвращаем ошибку авторизации 401
+				http.Error(w, "Authentification required", http.StatusUnauthorized)
+				return
+			}
+		}
+		next(w, r)
+	})
+}
+func validateToken(token string) bool {
+	jwtToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil {
+		log.Println("Ошибка при разборке токена", err)
+		return false
+	}
+	if jwtToken.Valid {
+		log.Println("Валидный токен")
+		return true
+	} else {
+		log.Println("Невалидный токен")
+		return false
 	}
 }

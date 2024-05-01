@@ -35,7 +35,6 @@ func DatabaseCheck() {
 	}
 	var install bool
 	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в корне проекта
-
 	_, err := os.Stat(dbPath)
 	if err != nil {
 		install = true
