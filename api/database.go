@@ -26,7 +26,7 @@ func createTable(db *sql.DB) error {
 	return nil
 }
 
-// DatabaseCheck DatabaseInit - проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
+// DatabaseCheck проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
 func DatabaseCheck() {
 	var dbPath = "./database/scheduler.db"
 	TODO_DBFILE, exists := os.LookupEnv("TODO_DBFILE")
@@ -38,7 +38,7 @@ func DatabaseCheck() {
 	_, err := os.Stat(dbPath)
 	if err != nil {
 		install = true
-		log.Println("База данных не найдена")
+		log.Println("База данных не установлена")
 	}
 
 	if install == true {

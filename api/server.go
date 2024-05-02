@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// Форма для ответа на ошибку в json
 func errorResponse(errorText string) []byte {
 	jsonErr, err := json.Marshal(map[string]string{"error": errorText})
 	if err != nil {
@@ -21,23 +22,23 @@ func errorResponse(errorText string) []byte {
 	return jsonErr
 }
 
-var secret []byte
-
-func tokenResponse(password string) string {
+// Возвращает JWT-токен
+func hashPassword(password string) string {
+	secret := []byte(password)
 	jwtToken := jwt.New(jwt.SigningMethodHS256)
 	signedToken, err := jwtToken.SignedString(secret)
 	if err != nil {
 		log.Println("Ошибка при подписании токена", err)
 	}
-
+	log.Println(signedToken)
 	return signedToken
 }
 
-// EnvInit Загружает переменные из файла .env
+// EnvInit Загружает переменные из файла .env и создает файл .env в корне проекта если он не существует
 func EnvInit() {
 	if err := godotenv.Load(".env"); err != nil {
 		log.Println("файл .env не найден", err)
-		fmt.Println("создаю файл .env")
+		log.Println("создаю файл .env")
 		_, err = os.Create(".env")
 		if err != nil {
 			log.Println("не удалось создать файл .env", err)
@@ -67,6 +68,8 @@ func StartServer() {
 		log.Fatal(err)
 	}
 }
+
+// Получение даты для повторения задачи
 func nextDateHandler(w http.ResponseWriter, r *http.Request) {
 	nowParameter := r.URL.Query().Get("now")
 	dateParameter := r.URL.Query().Get("date")
@@ -97,6 +100,7 @@ type Task struct {
 	Comment string `json:"comment"`
 	Repeat  string `json:"repeat"`
 }
+
 type TaskR struct {
 	ID      string `json:"id"`
 	Date    string `json:"date"`
@@ -105,7 +109,7 @@ type TaskR struct {
 	Repeat  string `json:"repeat"`
 }
 
-// api/task
+// api/task - Взаимодействие с задачами
 func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 	var dbPath = "./database/scheduler.db"
 	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
@@ -113,7 +117,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		dbPath = TODO_DBFILE
 	}
 	switch r.Method {
-	case "GET":
+	case "GET": // Получение задачи по id
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			w.Write(errorResponse("id не указан"))
@@ -156,7 +160,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write(jsonResponse)
 
-	case "POST":
+	case "POST": // Добавление задачи
 
 		var task Task
 
@@ -233,7 +237,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		w.Write(jsonId)
 
-	case "DELETE":
+	case "DELETE": // Удаление задачи
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			w.Write(errorResponse("id не указан"))
@@ -281,7 +285,7 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write(jsonResponse)
 
-	case "PUT":
+	case "PUT": // Обновление параметров задачи
 		var task TaskR
 
 		err := json.NewDecoder(r.Body).Decode(&task)
@@ -358,14 +362,13 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write(jsonResponse)
-
 	default:
 		http.Error(w, "недоступный метод", http.StatusMethodNotAllowed)
 		log.Println("недоступный метод")
 	}
 }
 
-// api/tasks
+// api/tasks - Получение списка задач. Поиск задач по дате/заголовку/комментарию
 func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 	var dbPath = "./database/scheduler.db"
 	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
@@ -504,7 +507,7 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// api/task/done
+// api/task/done - Отметка задачи как завершенной с последующим повторением или удалением в зависимости от параметра repeat
 func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
 	var dbPath = "./database/scheduler.db"
 	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
@@ -613,7 +616,7 @@ func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// api/signin
+// api/signin - Проверка пароля, аутентификация
 func checkPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	type pass struct {
 		Password string `json:"password"`
@@ -635,33 +638,33 @@ func checkPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(errorResponse("Пароль не задан"))
 	}
 	if savedPassword == requested.Password {
-		token, err := json.Marshal(tokenResponse(requested.Password))
+		tokenResponse, err := json.Marshal(map[string]string{"token": hashPassword(requested.Password)})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			log.Println("Ошибка при записи в json", err)
 		}
-		w.Write(token)
+		w.Write(tokenResponse)
 	} else {
 		w.Write(errorResponse("Неверный пароль"))
+
 	}
+
 }
 
+// Проверка авторизации для всех основных запросов
 func auth(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// смотрим наличие пароля
 		pass := os.Getenv("TODO_PASSWORD")
 		if len(pass) > 0 {
-			var jwt string // JWT-токен из куки
-			// получаем куку
+			var jwt string
 			cookie, err := r.Cookie("token")
 			if err == nil {
 				jwt = cookie.Value
 			}
+
 			var valid bool
-			// здесь код для валидации и проверки JWT-токена
 			valid = validateToken(jwt)
 			if !valid {
-				// возвращаем ошибку авторизации 401
 				http.Error(w, "Authentification required", http.StatusUnauthorized)
 				return
 			}
@@ -669,19 +672,23 @@ func auth(next http.HandlerFunc) http.HandlerFunc {
 		next(w, r)
 	})
 }
+
+// Проверка токена
 func validateToken(token string) bool {
+	pass := os.Getenv("TODO_PASSWORD")
+	secret := []byte(pass)
 	jwtToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
-		return []byte(secret), nil
+		return secret, nil
 	})
 	if err != nil {
-		log.Println("Ошибка при разборке токена", err)
+		log.Println("Ошибка при декодировании токена", err)
 		return false
 	}
 	if jwtToken.Valid {
-		log.Println("Валидный токен")
+		log.Println("Токен валиден, доступ разрешен")
 		return true
 	} else {
-		log.Println("Невалидный токен")
+		log.Println("Токен невалиден, доступ запрещен")
 		return false
 	}
 }
