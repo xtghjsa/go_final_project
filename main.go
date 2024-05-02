@@ -10,5 +10,5 @@ func main() {
 	// Проверка на наличие базы данных, создание в случае ее отсутствия
 	api.DatabaseCheck()
 	// Запуск сервера
-	api.StartServer()
+	defer api.StartServer()
 }

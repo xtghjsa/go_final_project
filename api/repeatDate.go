@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// NextDate - Вычисляет день повтора задачи по выбранным параметрам
 func NextDate(now time.Time, date string, repeat string) (string, error) {
 	// Проверка на наличие даты повторения
 	if repeat == "" {

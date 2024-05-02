@@ -28,27 +28,29 @@ func createTable(db *sql.DB) error {
 
 // DatabaseCheck проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
 func DatabaseCheck() {
-	var dbPath = "./database/scheduler.db"
-	TODO_DBFILE, exists := os.LookupEnv("TODO_DBFILE")
-	if exists && TODO_DBFILE != "" {
+	var dbPath string
+	TODO_DBFILE := os.Getenv("TODO_DBFILE")
+	if TODO_DBFILE != "" {
 		dbPath = TODO_DBFILE
+	} else {
+		dbPath = "./scheduler.db"
 	}
 	var install bool
-	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в корне проекта
+	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в папке database
 	_, err := os.Stat(dbPath)
 	if err != nil {
 		install = true
-		log.Println("База данных не установлена")
+		log.Println("База данных не установлена", err)
 	}
 
 	if install == true {
 		_, err := os.Create(dbPath)
 		if err != nil {
-			log.Println(err)
+			log.Println("Ошибка создания базы данных", err)
 		}
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
-			log.Println(err)
+			log.Println("Ошибка открытия базы данных", err)
 		}
 		defer db.Close()
 		err = createTable(db)

@@ -51,8 +51,8 @@ func StartServer() {
 
 	Port := "7540"
 	webDir := "./web"
-	TODO_PORT, exists := os.LookupEnv("TODO_PORT")
-	if exists && TODO_PORT != "" {
+	TODO_PORT := os.Getenv("TODO_PORT")
+	if TODO_PORT != "" {
 		Port = TODO_PORT
 	}
 	// При наличии файла .env c заданным значением переменной TODO_PORT сервер запустится на указанном порту если переменная не задана, то будет использован стандартный порт 7540
@@ -111,10 +111,12 @@ type TaskR struct {
 
 // api/task - Взаимодействие с задачами
 func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
-	var dbPath = "./database/scheduler.db"
-	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
-	if exists && TODO_DBFILE != "" {
+	var dbPath string
+	TODO_DBFILE := os.Getenv("TODO_DBFILE")
+	if TODO_DBFILE != "" {
 		dbPath = TODO_DBFILE
+	} else {
+		dbPath = "./scheduler.db"
 	}
 	switch r.Method {
 	case "GET": // Получение задачи по id
@@ -370,10 +372,12 @@ func taskManagerHandler(w http.ResponseWriter, r *http.Request) {
 
 // api/tasks - Получение списка задач. Поиск задач по дате/заголовку/комментарию
 func showTasksHandler(w http.ResponseWriter, r *http.Request) {
-	var dbPath = "./database/scheduler.db"
-	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
-	if exists && TODO_DBFILE != "" {
+	var dbPath string
+	TODO_DBFILE := os.Getenv("TODO_DBFILE")
+	if TODO_DBFILE != "" {
 		dbPath = TODO_DBFILE
+	} else {
+		dbPath = "./scheduler.db"
 	}
 	search := r.URL.Query().Get("search")
 	if search != "" {
@@ -509,10 +513,12 @@ func showTasksHandler(w http.ResponseWriter, r *http.Request) {
 
 // api/task/done - Отметка задачи как завершенной с последующим повторением или удалением в зависимости от параметра repeat
 func markTaskAsDoneHandler(w http.ResponseWriter, r *http.Request) {
-	var dbPath = "./database/scheduler.db"
-	var TODO_DBFILE, exists = os.LookupEnv("TODO_DBFILE")
-	if exists && TODO_DBFILE != "" {
+	var dbPath string
+	TODO_DBFILE := os.Getenv("TODO_DBFILE")
+	if TODO_DBFILE != "" {
 		dbPath = TODO_DBFILE
+	} else {
+		dbPath = "./scheduler.db"
 	}
 
 	id := r.URL.Query().Get("id")
@@ -633,9 +639,10 @@ func checkPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(errorResponse("Введите пароль"))
 		return
 	}
-	savedPassword, exists := os.LookupEnv("TODO_PASSWORD")
-	if !exists {
+	savedPassword := os.Getenv("TODO_PASSWORD")
+	if savedPassword == "" {
 		w.Write(errorResponse("Пароль не задан"))
+		return
 	}
 	if savedPassword == requested.Password {
 		tokenResponse, err := json.Marshal(map[string]string{"token": hashPassword(requested.Password)})
