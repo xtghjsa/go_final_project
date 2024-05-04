@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	_ "modernc.org/sqlite"
@@ -24,29 +25,30 @@ func createTable(db *sql.DB) error {
 	return nil
 }
 
-// DatabaseCheck проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
-func DatabaseCheck() {
-	var dbPath string
+var DbPath = "./scheduler.db"
+
+// CheckDatabase проверяет наличие базы данных, в случае отсутствия создает ее вместе с таблицей scheduler
+func CheckDatabase() {
+
 	TODO_DBFILE := os.Getenv("TODO_DBFILE")
 	if TODO_DBFILE != "" {
-		dbPath = TODO_DBFILE
-	} else {
-		dbPath = "./scheduler.db"
+		DbPath = TODO_DBFILE
 	}
 	var install bool
 	// При наличии файла .env c заданным значением переменной TODO_DBFILE база данных будет создана по указанному пути, если переменная не задана, то будет создана в корне проекта
-	_, err := os.Stat(dbPath)
-	if err != nil {
+	_, err := os.Stat(DbPath)
+	if err != nil && errors.Is(err, os.ErrNotExist) {
 		install = true
 		log.Println("База данных не установлена", err)
+	} else if err != nil {
+		log.Fatal("Ошибка проверки наличия базы данных", err)
 	}
-
-	if install == true {
-		_, err := os.Create(dbPath)
+	if install {
+		_, err := os.Create(DbPath)
 		if err != nil {
 			log.Println("Ошибка создания базы данных", err)
 		}
-		db, err := sql.Open("sqlite", dbPath)
+		db, err := sql.Open("sqlite", DbPath)
 		if err != nil {
 			log.Println("Ошибка открытия базы данных", err)
 		}

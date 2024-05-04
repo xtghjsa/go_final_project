@@ -3,7 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
-	"main/api/next_date"
+	"main/api/repeat_date"
 	"net/http"
 	"time"
 )
@@ -19,7 +19,7 @@ func NextDateHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("некорректный формат now", err)
 		return
 	}
-	next, err := next_date.RepeatDate(now, dateParameter, repeatParameter)
+	next, err := repeat_date.NextDate(now, dateParameter, repeatParameter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		log.Println("Ошибка при получении даты для повторения", err)

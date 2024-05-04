@@ -3,7 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"log"
-	"main/api/next_date"
+	"main/api/repeat_date"
 	"net/http"
 	"strconv"
 	"time"
@@ -114,7 +114,7 @@ func (d *TaskManager) AddTask(w http.ResponseWriter, r *http.Request) {
 		if task.Repeat == "" {
 			task.Date = time.Now().Format("20060102")
 		} else if task.Repeat != "" {
-			task.Date, err = next_date.RepeatDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
+			task.Date, err = repeat_date.NextDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				_, err = w.Write(ErrorResponse("Некорректный формат повторения"))
@@ -177,7 +177,7 @@ func (d *TaskManager) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		log.Println("Ошибка при удалении записи из базы данных", err)
 		return
 	}
-	affected, err := res.RowsAffected()
+	affected, _ := res.RowsAffected()
 	if affected == 0 {
 		_, err = w.Write(ErrorResponse("Задача не найдена"))
 		if err != nil {
@@ -242,7 +242,7 @@ func (d *TaskManager) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		if task.Repeat == "" {
 			task.Date = time.Now().Format("20060102")
 		} else if task.Repeat != "" {
-			task.Date, err = next_date.RepeatDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
+			task.Date, err = repeat_date.NextDate(time.Now(), time.Now().Format("20060102"), task.Repeat)
 			if err != nil {
 				_, err = w.Write(ErrorResponse("Некорректный формат повторения"))
 				if err != nil {
@@ -337,7 +337,7 @@ func (d *TaskManager) MarkTaskAsDoneHandler(w http.ResponseWriter, r *http.Reque
 
 	}
 	if repeat != "" {
-		renewDate, err := next_date.RepeatDate(time.Now(), date, repeat)
+		renewDate, err := repeat_date.NextDate(time.Now(), date, repeat)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			log.Println("Ошибка при получении даты для повторения", err)

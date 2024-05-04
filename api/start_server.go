@@ -25,7 +25,7 @@ func StartServer() {
 		log.Fatal("Ошибка открытия базы данных", err)
 	}
 	defer db.Close()
-	database := &handlers.TaskManager{DB: db}
+	dBase := &handlers.TaskManager{DB: db}
 
 	savedPass := os.Getenv("TODO_PASSWORD")
 	pass := &authentication.Password{SavedPassword: savedPass}
@@ -34,9 +34,9 @@ func StartServer() {
 	fmt.Printf("Сервер запущен на localhost:%s\n", port)
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 	http.HandleFunc("/api/nextdate", handlers.NextDateHandler)
-	http.HandleFunc("/api/tasks", pass.Auth(database.ShowTasksHandler))
-	http.HandleFunc("/api/task", pass.Auth(database.TaskInteractionHandler))
-	http.HandleFunc("/api/task/done", pass.Auth(database.MarkTaskAsDoneHandler))
+	http.HandleFunc("/api/tasks", pass.Auth(dBase.ShowTasksHandler))
+	http.HandleFunc("/api/task", pass.Auth(dBase.TaskInteractionHandler))
+	http.HandleFunc("/api/task/done", pass.Auth(dBase.MarkTaskAsDoneHandler))
 	http.HandleFunc("/api/signin", pass.CheckPasswordHandler)
 	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {
