@@ -11,7 +11,7 @@ import (
 
 // createTable - создает таблицу scheduler
 func createTable(db *sql.DB) error {
-	db.Exec(`
+	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS scheduler (
 		    id INTEGER PRIMARY KEY AUTOINCREMENT,
 		    date VARCHAR(8) ,
@@ -19,9 +19,11 @@ func createTable(db *sql.DB) error {
 		    comment TEXT  ,
 		    repeat VARCHAR(128) 
 		    );
-		CREATE INDEX scheduler_date ON scheduler(date);
+		CREATE INDEX IF NOT EXISTS scheduler_date ON scheduler(date);
 		`)
-
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -46,11 +48,11 @@ func CheckDatabase() {
 	if install {
 		_, err := os.Create(DbPath)
 		if err != nil {
-			log.Println("Ошибка создания базы данных", err)
+			log.Fatal("Ошибка создания базы данных", err)
 		}
 		db, err := sql.Open("sqlite", DbPath)
 		if err != nil {
-			log.Println("Ошибка открытия базы данных", err)
+			log.Fatal("Ошибка открытия базы данных", err)
 		}
 		defer db.Close()
 		err = createTable(db)
