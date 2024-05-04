@@ -40,7 +40,7 @@ func CheckDatabase() {
 	if err != nil && errors.Is(err, os.ErrNotExist) {
 		install = true
 		log.Println("База данных не установлена", err)
-	} else if err != nil {
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Fatal("Ошибка проверки наличия базы данных", err)
 	}
 	if install {
